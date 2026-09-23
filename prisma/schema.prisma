@@ -1,0 +1,88 @@
+// Schema do banco — Sistema de Controle Financeiro (v1)
+// Fonte de verdade do escopo: SPEC.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  RECEITA
+  DESPESA
+}
+
+model User {
+  id           String        @id @default(cuid())
+  nome         String
+  email        String        @unique
+  senhaHash    String
+  accounts     Account[]
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+}
+
+model Account {
+  id           String        @id @default(cuid())
+  nome         String
+  tipo         String // ex: "corrente", "carteira", "poupanca"
+  saldoInicial Decimal       @default(0) @db.Decimal(12, 2)
+  user         User          @relation(fields: [userId], references: [id])
+  userId       String
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+}
+
+model Category {
+  id           String          @id @default(cuid())
+  nome         String
+  tipo         TransactionType
+  cor          String          @default("#6b7280")
+  transactions Transaction[]
+
+  /// Nome único por tipo (decisão 2026-09-16): evita duplicatas de mesma natureza,
+  /// mas permite "Alimentação" de despesa e "Alimentação" de receita coexistirem.
+  @@unique([nome, tipo])
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  valor       Decimal         @db.Decimal(12, 2)
+  tipo        TransactionType
+  descricao   String?
+
+  /// Data real da compra/lançamento — usada para o cálculo do saldo da conta.
+  data        DateTime
+
+  /// Mês de competência (a qual mês a transação "pertence" na tela principal).
+  /// Normalizado para o primeiro dia do mês (ex: 2026-10-01). Base do agrupamento da tela do mês.
+  mesReferencia DateTime
+
+  /// Marca a despesa como recorrente mensal — quando true, é a "recorrência-base" (ver SPEC 4.2).
+  recorrente  Boolean         @default(false)
+
+  /// Vincula as ocorrências mensais materializadas à sua recorrência-base.
+  /// A base e todas as ocorrências geradas compartilham o mesmo recorrenteGrupoId.
+  recorrenteGrupoId String?
+
+  // Parcelamento (ver SPEC 4.1). Quando é uma compra parcelada, cada parcela é uma
+  // Transaction própria com competência consecutiva, compartilhando o mesmo parcelaGrupoId.
+  parcelaGrupoId String?
+  parcelaNum     Int?
+  parcelaTotal   Int?
+
+  account     Account         @relation(fields: [accountId], references: [id])
+  accountId   String
+  category    Category        @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  user        User            @relation(fields: [userId], references: [id])
+  userId      String
+  createdAt   DateTime        @default(now())
+
+  @@index([mesReferencia])
+  @@index([parcelaGrupoId])
+  @@index([recorrenteGrupoId])
+}
