@@ -61,7 +61,6 @@ export default function TransactionsManager({
       mesReferencia: `${valores.mesReferencia}-01T00:00:00Z`,
       accountId: valores.accountId,
       categoryId: valores.categoryId,
-      tipo: "DESPESA",
       parcelada: valores.modo === "parcelada",
       parcelas: valores.modo === "parcelada" ? parseInt(valores.parcelas, 10) : undefined,
       recorrente: valores.modo === "recorrente",
@@ -121,6 +120,42 @@ export default function TransactionsManager({
   async function excluir(id: string, transacao: TransacaoParaFormulario) {
     setErroGeral(null);
 
+    // Recorrente: perguntar se exclui só este mês ou este mês em diante.
+    if (transacao.recorrenteGrupoId) {
+      const esteMesEmDiante = window.confirm(
+        "Esta despesa é recorrente.\n\nOK = excluir ESTE MÊS e os meses posteriores (encerra a recorrência)\nCancelar = excluir apenas ESTE MÊS (a recorrência continua)",
+      );
+
+      if (esteMesEmDiante) {
+        const resposta = await fetch(`/api/transactions/${id}/encerrar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mesReferencia: competenciaParam,
+          }),
+        });
+        if (!resposta.ok) {
+          const dados = await resposta.json().catch(() => null);
+          setErroGeral(dados?.erro ?? "Não foi possível excluir a despesa.");
+          return;
+        }
+        router.refresh();
+        return;
+      }
+
+      // Excluir apenas este mês → "pula" a ocorrência (não revive ao reabrir).
+      const resposta = await fetch(`/api/transactions/${id}?escopo=pular`, {
+        method: "DELETE",
+      });
+      if (!resposta.ok) {
+        const dados = await resposta.json().catch(() => null);
+        setErroGeral(dados?.erro ?? "Não foi possível excluir a despesa.");
+        return;
+      }
+      router.refresh();
+      return;
+    }
+
     let escopo: "esta" | "todas" = "esta";
     if (transacao.parcelaGrupoId) {
       const escolha = window.confirm(
@@ -158,12 +193,14 @@ export default function TransactionsManager({
     if (!transacao.recorrenteGrupoId) return;
 
     const confirmado = window.confirm(
-      "Encerrar esta recorrência? As despesas dos meses anteriores serão mantidas, mas a base e as ocorrências futuras serão removidas.",
+      "Encerrar esta recorrência a partir deste mês?\n\nAs despesas dos meses anteriores serão mantidas, mas este mês e os meses posteriores serão removidos, e a recorrência não será mais gerada.",
     );
     if (!confirmado) return;
 
     const resposta = await fetch(`/api/transactions/${transacao.id}/encerrar`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mesReferencia: competenciaParam }),
     });
 
     if (!resposta.ok) {

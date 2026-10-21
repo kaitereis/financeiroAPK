@@ -73,9 +73,8 @@ Acesse http://localhost:3000
 - [x] CRUD de contas/carteiras (criar, editar, excluir, listar com saldo atual)
 - [x] CRUD de categorias (criar, editar, excluir com reatribuição)
 - [x] CRUD de transações (comum, parcelada e recorrente)
-- [x] Dashboard (saldo total, resumo do mês receitas × despesas, últimos lançamentos)
+- [x] Dashboard (saldo total, total de despesas do mês, últimos lançamentos)
 - [x] Filtro de despesas por categoria (multi-seleção) na tela do mês
-- [ ] Tela de receitas
 
 ## Usuários do seed
 
@@ -108,21 +107,21 @@ imediatamente e a antiga deixa de funcionar.
 
 - Cada conta pertence a um dos dois usuários (dono), mas **ambos podem editar/excluir** qualquer conta (finanças compartilhadas).
 - Tipos aceitos: conta corrente, carteira, poupança.
-- **Saldo atual** = `saldo_inicial` + soma das transações da conta, usando a **data real** (`data`) — não a competência.
+- **Saldo atual** = `saldo_inicial` − soma das despesas da conta, usando a **data real** (`data`) — não a competência.
 - **Exclusão bloqueada:** uma conta com lançamentos não pode ser excluída (evita apagar histórico). A API responde `409` com a quantidade de lançamentos.
 - Rotas de API: `GET/POST /api/accounts`, `PATCH/DELETE /api/accounts/[id]`. Todas exigem sessão e respondem `401` em JSON quando não autenticadas.
 
 ## Categorias
 
-- Tipos: **despesa** e **receita**. Cada categoria tem nome, tipo e cor (`#rrggbb`).
-- **Nome único por tipo** (constraint `@@unique([nome, tipo])`): não pode haver duas "Alimentação" de despesa, mas pode existir uma de despesa e uma de receita.
-- **Exclusão com reatribuição:** ao excluir uma categoria com lançamentos, eles são movidos para a categoria de reserva do mesmo tipo — **"Outros"** (despesa) ou **"Outras Receitas"** (receita) — preservando o histórico.
+- Cada categoria tem nome e cor (`#rrggbb`). O sistema é **exclusivamente de despesas** — não há tipo de categoria.
+- **Nome único** (constraint `@@unique` no campo `nome`): não pode haver duas categorias com o mesmo nome.
+- **Exclusão com reatribuição:** ao excluir uma categoria com lançamentos, eles são movidos para a categoria de reserva **"Outros"** — preservando o histórico.
 - A própria categoria de reserva não pode ser excluída enquanto tiver lançamentos (`409`).
 - Rotas de API: `GET/POST /api/categories`, `PATCH/DELETE /api/categories/[id]`.
 
 ## Transações
 
-- Nesta versão o CRUD cobre **despesas** (receitas ficam para uma fatia futura).
+- O CRUD cobre **despesas** — o sistema não possui lançamento de receitas.
 - **Comum:** um único lançamento.
 - **Parcelada:** o usuário informa o **valor total** da compra e o número de parcelas; o sistema divide o total (ajustando centavos na 1ª parcela) e cria N transações com competências consecutivas, unidas por `parcelaGrupoId`.
 - **Recorrente mensal:** cria uma transação-base (`recorrente = true`); as ocorrências dos meses seguintes são materializadas sob demanda ao abrir o mês (SPEC 4.2).
@@ -134,9 +133,9 @@ imediatamente e a antiga deixa de funcionar.
 
 ## Dashboard
 
-- **Saldo total das contas:** soma de `saldo_inicial` + movimentações de todas as contas (pela data real).
-- **Resumo do mês:** receitas × despesas da competência atual e o resultado (receitas − despesas).
-- **Últimos lançamentos:** os 8 lançamentos mais recentes (receitas e despesas), com categoria, data e quem lançou.
+- **Saldo total das contas:** soma de `saldo_inicial` − despesas de todas as contas (pela data real).
+- **Total de despesas do mês:** soma das despesas da competência atual.
+- **Últimos lançamentos:** os 8 lançamentos mais recentes (despesas), com categoria, data e quem lançou.
 - Acessível pela aba **Visão geral** (`/dashboard`).
 
 ## Filtro por categoria (tela do mês)

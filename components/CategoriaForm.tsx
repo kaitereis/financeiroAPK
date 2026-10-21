@@ -1,14 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import {
-  TIPOS_CATEGORIA,
-  TIPO_CATEGORIA_LABEL,
-} from "@/lib/categories";
 
 export interface CategoriaFormValues {
   nome: string;
-  tipo: string;
   cor: string;
 }
 
@@ -40,7 +35,6 @@ export default function CategoriaForm({
   rotuloSalvar = "Salvar",
 }: Props) {
   const [nome, setNome] = useState(inicial?.nome ?? "");
-  const [tipo, setTipo] = useState(inicial?.tipo ?? TIPOS_CATEGORIA[0]);
   const [cor, setCor] = useState(inicial?.cor ?? CORES_SUGERIDAS[0]);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -50,7 +44,7 @@ export default function CategoriaForm({
     setErro(null);
     setSalvando(true);
 
-    const mensagem = await onSalvar({ nome, tipo, cor });
+    const mensagem = await onSalvar({ nome, cor });
 
     if (mensagem) {
       setErro(mensagem);
@@ -63,45 +57,22 @@ export default function CategoriaForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label
-            htmlFor="cat-nome"
-            className="mb-1 block text-sm font-medium text-slate-700"
-          >
-            Nome
-          </label>
-          <input
-            id="cat-nome"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            required
-            maxLength={60}
-            placeholder="Ex: Alimentação"
-            className={inputClass}
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="cat-tipo"
-            className="mb-1 block text-sm font-medium text-slate-700"
-          >
-            Tipo
-          </label>
-          <select
-            id="cat-tipo"
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            className={inputClass}
-          >
-            {TIPOS_CATEGORIA.map((t) => (
-              <option key={t} value={t}>
-                {TIPO_CATEGORIA_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div>
+        <label
+          htmlFor="cat-nome"
+          className="mb-1 block text-sm font-medium text-slate-700"
+        >
+          Nome
+        </label>
+        <input
+          id="cat-nome"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          required
+          maxLength={60}
+          placeholder="Ex: Alimentação"
+          className={inputClass}
+        />
       </div>
 
       <div>

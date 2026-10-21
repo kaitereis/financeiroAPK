@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { exigirSessao } from "@/lib/session";
-import { buscarTransacao, encerrarRecorrencia } from "@/lib/transactions-crud";
+import {
+  buscarTransacao,
+  encerrarRecorrencia,
+  transacaoUpdateSchema,
+} from "@/lib/transactions-crud";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +14,11 @@ interface RouteContext {
 
 /**
  * POST /api/transactions/[id]/encerrar
- * Encerra uma recorrência: remove a base e as ocorrências futuras,
- * mantendo o histórico de meses anteriores.
+ * Encerra uma recorrência a partir de uma competência (inclusiva): remove as
+ * ocorrências daquele mês em diante e mantém o histórico anterior.
+ * Body opcional: { mesReferencia: "YYYY-MM" } — default = mês do próprio lançamento.
  */
-export async function POST(_request: Request, { params }: RouteContext) {
+export async function POST(request: Request, { params }: RouteContext) {
   const session = await exigirSessao();
   if (!session) {
     return NextResponse.json({ erro: "Não autenticado" }, { status: 401 });
@@ -35,7 +40,25 @@ export async function POST(_request: Request, { params }: RouteContext) {
     );
   }
 
-  const resultado = await encerrarRecorrencia(transacao.recorrenteGrupoId);
+  let mesReferencia = transacao.mesReferencia;
+  try {
+    const body = await request.json();
+    if (body && typeof body.mesReferencia === "string") {
+      const parsed = transacaoUpdateSchema
+        .pick({ mesReferencia: true })
+        .safeParse({ mesReferencia: `${body.mesReferencia}-01T00:00:00Z` });
+      if (parsed.success && parsed.data.mesReferencia) {
+        mesReferencia = parsed.data.mesReferencia;
+      }
+    }
+  } catch {
+    // Sem body → usa o mês do próprio lançamento.
+  }
+
+  const resultado = await encerrarRecorrencia(
+    transacao.recorrenteGrupoId,
+    mesReferencia,
+  );
   if (!resultado.ok) {
     return NextResponse.json(
       { erro: "Recorrência não encontrada." },

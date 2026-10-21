@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { TransactionType } from "@prisma/client";
 
 /** Tipos de conta aceitos na v1 (SPEC 4 — "conta corrente / carteira / poupança"). */
 export const TIPOS_CONTA = ["corrente", "carteira", "poupanca"] as const;
@@ -47,15 +46,17 @@ export async function listarContas(): Promise<ContaComSaldo[]> {
     orderBy: { createdAt: "asc" },
     include: {
       user: { select: { id: true, nome: true } },
-      transactions: { select: { valor: true, tipo: true } },
+      // Ignora competências puladas de recorrências (não são despesas efetivas).
+      transactions: { where: { ocorrenciaPulada: false }, select: { valor: true } },
     },
   });
 
   return contas.map((conta) => {
-    const movimentacao = conta.transactions.reduce((soma, t) => {
-      const valor = Number(t.valor);
-      return t.tipo === TransactionType.RECEITA ? soma + valor : soma - valor;
-    }, 0);
+    // Sistema apenas de despesas: toda transação reduz o saldo da conta.
+    const movimentacao = conta.transactions.reduce(
+      (soma, t) => soma - Number(t.valor),
+      0,
+    );
 
     return {
       id: conta.id,

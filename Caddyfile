@@ -1,0 +1,3 @@
+financas.dropstudio.site {
+    reverse_proxy app:3000
+}

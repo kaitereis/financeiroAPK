@@ -1,7 +1,7 @@
 # Spec — Sistema de Controle Financeiro (v1)
 
 ## 1. Objetivo
-Sistema para Kaíte e sua esposa registrarem e acompanharem juntos as receitas e despesas do casal, com visão de saldo e histórico. A **visualização principal é a tela de despesas do mês corrente** (ver seção 5.1), com navegação para meses anteriores e futuros, incluindo o lançamento de despesas parceladas e recorrentes. Rodando local no início e disponível online depois via VPS próprio.
+Sistema para Kaíte e sua esposa registrarem e acompanharem juntos as **despesas** do casal, com visão de saldo e histórico. O sistema é **exclusivamente de despesas** — não há lançamento de receitas. A **visualização principal é a tela de despesas do mês corrente** (ver seção 5.1), com navegação para meses anteriores e futuros, incluindo o lançamento de despesas parceladas e recorrentes. Rodando local no início e disponível online depois via VPS próprio.
 
 ## 2. Usuários
 - 2 usuários fixos (Kaíte e Ana Paula), sem cadastro público — contas criadas manualmente no banco na primeira configuração.
@@ -32,11 +32,11 @@ Conexão padrão em ambos: `postgresql://financeiro:financeiro123@localhost:5432
 |---|---|
 | **User** | id, nome, email, senha_hash |
 | **Account** | id, user_id (dono da conta — cada conta pertence a uma pessoa), nome, tipo (conta corrente / carteira / poupança), saldo_inicial |
-| **Category** | id, nome, tipo (receita / despesa), cor |
-| **Transaction** | id, account_id, category_id, user_id (quem lançou), valor, tipo (receita/despesa), descrição, **data** (data real da compra/lançamento), **mes_referencia** (mês de competência — a qual mês a transação "pertence" na tela principal), **recorrente** (bool), **parcela_grupo_id** / **parcela_num** / **parcela_total** (para parcelamentos), criado_em |
+| **Category** | id, nome, cor |
+| **Transaction** | id, account_id, category_id, user_id (quem lançou), valor, descrição, **data** (data real da compra/lançamento), **mes_referencia** (mês de competência — a qual mês a transação "pertence" na tela principal), **recorrente** (bool), **parcela_grupo_id** / **parcela_num** / **parcela_total** (para parcelamentos), criado_em |
 
 - Contas são individuais (cada uma pertence a um dos dois usuários) — se quiserem uma "conta conjunta" no futuro, basta cadastrar uma conta do tipo apropriado sem que isso exija mudança de modelo.
-- `saldo_inicial` é definido na criação da conta. O **saldo atual da conta** é calculado como `saldo_inicial + soma das transações daquela conta`, usando a **data real (`data`)** das transações — não a competência.
+- `saldo_inicial` é definido na criação da conta. O **saldo atual da conta** é calculado como `saldo_inicial − soma das despesas daquela conta`, usando a **data real (`data`)** das transações — não a competência.
 - **Competência (`mes_referencia`):** cada transação pertence a um mês de competência, que pode ser diferente da data da compra (ex: compra no cartão dia 28/09 com fatura em outubro → competência = outubro). A tela principal do mês agrupa as transações por `mes_referencia`, enquanto o saldo real da conta segue a `data`.
 - Assumindo moeda única (BRL) e sem transferência entre contas na v1 — ver seção 6.
 
@@ -46,19 +46,25 @@ Conexão padrão em ambos: `postgresql://financeiro:financeiro123@localhost:5432
 - As N transações compartilham o mesmo `parcela_grupo_id` e trazem `parcela_num` (1..N) e `parcela_total` (N), permitindo exibir "3/10" e editar/excluir o grupo inteiro.
 
 ### 4.2 Despesas recorrentes
-- Uma despesa pode ser marcada como **recorrente mensal** (`recorrente = true`).
+- Uma despesa pode ser marcada como **recorrente mensal** (`recorrente = true`), formando uma "série".
 - **Geração sob demanda (lazy):** o lançamento de um mês só é materializado quando aquele mês é **aberto na tela principal**. Ao abrir um mês, o sistema verifica se cada despesa recorrente ativa já possui uma transação naquela competência; se não houver, ela é criada naquele momento (com a mesma descrição, categoria, conta e valor da recorrência-base).
 - Não há agendador automático em background na v1 — a criação sempre acontece a partir da navegação do usuário.
-- Como cada mês materializado gera uma `Transaction` normal, ela pode ser **editada ou excluída individualmente** sem afetar os demais meses (ex: ajustar o valor da conta de luz de um mês específico).
 - **Encadeamento:** para vincular as ocorrências à origem, cada transação recorrente materializada referencia a recorrência-base via `recorrenteGrupoId` (a transação-base tem `recorrente = true`; as ocorrências herdam o mesmo `recorrenteGrupoId`).
+- **Reparo automático da série (decisão 2026-10-07):** a materialização trabalha por `recorrenteGrupoId`, não exige que a linha-base ainda exista — se a base tiver sido apagada, qualquer ocorrência do grupo assume o papel de âncora e a série volta a ser materializada (antes, sem a base, a série "morria" silenciosamente).
+- **Editar:** cada mês materializado é uma `Transaction` normal e pode ser editada individualmente sem afetar os demais meses (ex: ajustar o valor da conta de luz de um mês específico).
+- **Excluir (decisão 2026-10-07):** ao excluir uma ocorrência de recorrência, o sistema pergunta:
+  - **Este mês e os posteriores** (encerra a recorrência): remove a competência escolhida e todas as futuras, mantém os meses anteriores (histórico) e desvincula o grupo — a série não volta a ser gerada.
+  - **Apenas este mês:** a ocorrência daquele mês é apenas "pulada" (`ocorrenciaPulada = true`) — fica oculta das listas/totais, mas a linha é mantida como âncora da série. Assim os meses seguintes continuam sendo gerados e o mês pulado **não "revive"** ao reabrir o mês.
+- O botão dedicado **"Encerrar"** continua disponível na lista (equivale a "este mês e os posteriores", a partir do mês do lançamento exibido).
+- Linhas com `ocorrenciaPulada = true` são ignoradas em listas, totais do mês, resumo por categoria, dashboard, saldos de contas e contagens de categoria.
 
 ## 5. Funcionalidades da v1
 - [ ] Login (e-mail/senha, 2 usuários fixos)
 - [ ] **Tela principal — Despesas do mês (ver 5.1)** ← visualização primária do sistema
 - [ ] CRUD de transações (criar, editar, excluir, listar), incluindo parceladas e recorrentes
-- [ ] CRUD de categorias (com um conjunto padrão pré-cadastrado: Alimentação, Transporte, Moradia, Lazer, Salário, Outros)
+- [ ] CRUD de categorias (com um conjunto padrão pré-cadastrado: Alimentação, Transporte, Moradia, Lazer, Saúde, Outros)
 - [ ] Cadastro de contas/carteiras (ex: "Conta conjunta", "Carteira Kaíte")
-- [ ] Dashboard com: saldo atual total, resumo do mês (receitas x despesas), últimos lançamentos
+- [ ] Dashboard com: saldo atual total, resumo do mês (total de despesas), últimos lançamentos
 - [ ] Filtro de transações por período e por categoria
 - [ ] Indicação de quem lançou cada transação
 
@@ -69,8 +75,25 @@ Esta é a tela de abertura do sistema e a mais usada no dia a dia.
 - **Navegação entre meses:** controle no formato `‹  Mês/Ano  ›` — setas para avançar (meses futuros, ex: parcelas a vencer) e voltar (histórico). Ao abrir, exibe o mês corrente.
 - **Base de agrupamento:** as despesas são agrupadas pelo `mes_referencia` (competência), não pela data da compra.
 - **Cada item da lista mostra:** descrição, categoria (com cor), valor, data, quem lançou e, quando aplicável, o indicador de parcela (ex: `3/10`).
-- **Receitas NÃO aparecem nesta tela** — o foco é 100% despesas. Receitas ficam em aba/tela separada.
+- **Somente despesas:** o sistema não possui lançamento de receitas — todas as transações são despesas.
 - **Ações rápidas:** botão para adicionar nova despesa e acesso a editar/excluir cada lançamento (para parceladas, opção de editar/excluir o grupo todo).
+
+#### 5.1.1 Colunas por pessoa (decisão 2026-09-23)
+- **Posição:** entre a navegação de mês (`‹ Mês/Ano ›`) e o card "Total de despesas do mês".
+- **Conteúdo:** duas colunas lado a lado (uma por usuário — Káite e Ana Paula), cada uma com
+  o **total gasto pela pessoa no mês** e a **lista dos lançamentos dela** (descrição, categoria
+  com cor, data, valor e indicador de parcela quando houver).
+- **Ordem das colunas:** segue a ordem de cadastro dos usuários (`createdAt`), garantindo
+  posições estáveis entre recarregamentos.
+- **Respeitam o filtro de categoria ativo** — os totais e listas das colunas refletem o filtro.
+- **Somente leitura:** as ações de editar/excluir continuam apenas na lista completa abaixo,
+  para não duplicar controles.
+- **Responsivo:** em telas estreitas as colunas empilham (uma acima da outra).
+
+#### 5.1.2 Ordem das abas (decisão 2026-09-23)
+- A aba **"Despesas do mês"** (`/`) é a **primeira** do menu, por ser a visualização primária.
+- **"Visão geral"** (`/dashboard`) passa a ser a **segunda**.
+- Ordem final: `Despesas do mês` · `Visão geral` · `Contas` · `Categorias`.
 
 ## 6. Fora do escopo da v1
 Explicitamente adiado para versões futuras — não implementar agora:

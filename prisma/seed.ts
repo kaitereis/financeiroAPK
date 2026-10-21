@@ -1,4 +1,4 @@
-import { PrismaClient, TransactionType } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -52,11 +52,6 @@ async function main() {
     { nome: "Outros", cor: "#6b7280" },
   ];
 
-  const categoriasReceita = [
-    { nome: "Salário", cor: "#16a34a" },
-    { nome: "Outras Receitas", cor: "#22c55e" },
-  ];
-
   const catMap = new Map<string, string>();
 
   for (const c of categoriasDespesa) {
@@ -66,21 +61,6 @@ async function main() {
       create: {
         id: `cat-despesa-${c.nome.toLowerCase()}`,
         nome: c.nome,
-        tipo: TransactionType.DESPESA,
-        cor: c.cor,
-      },
-    });
-    catMap.set(c.nome, cat.id);
-  }
-
-  for (const c of categoriasReceita) {
-    const cat = await prisma.category.upsert({
-      where: { id: `cat-receita-${c.nome.toLowerCase().replace(/\s+/g, "-")}` },
-      update: { cor: c.cor },
-      create: {
-        id: `cat-receita-${c.nome.toLowerCase().replace(/\s+/g, "-")}`,
-        nome: c.nome,
-        tipo: TransactionType.RECEITA,
         cor: c.cor,
       },
     });
@@ -159,30 +139,7 @@ async function main() {
     data: [
       {
         id: nextId(),
-        valor: 4200,
-        tipo: TransactionType.RECEITA,
-        descricao: "Salário Kaíte",
-        data: new Date(Date.UTC(anoMesAnterior, mesAnterior - 1, 5)),
-        mesReferencia: compAnterior,
-        accountId: contaKaite.id,
-        categoryId: catMap.get("Salário")!,
-        userId: kaite.id,
-      },
-      {
-        id: nextId(),
-        valor: 3800,
-        tipo: TransactionType.RECEITA,
-        descricao: "Salário Ana Paula",
-        data: new Date(Date.UTC(anoMesAnterior, mesAnterior - 1, 5)),
-        mesReferencia: compAnterior,
-        accountId: contaAna.id,
-        categoryId: catMap.get("Salário")!,
-        userId: ana.id,
-      },
-      {
-        id: nextId(),
         valor: 1500,
-        tipo: TransactionType.DESPESA,
         descricao: "Aluguel",
         data: new Date(Date.UTC(anoMesAnterior, mesAnterior - 1, 10)),
         mesReferencia: compAnterior,
@@ -193,7 +150,6 @@ async function main() {
       {
         id: nextId(),
         valor: 680.5,
-        tipo: TransactionType.DESPESA,
         descricao: "Supermercado do mês",
         data: new Date(Date.UTC(anoMesAnterior, mesAnterior - 1, 12)),
         mesReferencia: compAnterior,
@@ -209,30 +165,7 @@ async function main() {
     data: [
       {
         id: nextId(),
-        valor: 4200,
-        tipo: TransactionType.RECEITA,
-        descricao: "Salário Kaíte",
-        data: new Date(Date.UTC(anoAtual, mesAtual - 1, 5)),
-        mesReferencia: compAtual,
-        accountId: contaKaite.id,
-        categoryId: catMap.get("Salário")!,
-        userId: kaite.id,
-      },
-      {
-        id: nextId(),
-        valor: 3800,
-        tipo: TransactionType.RECEITA,
-        descricao: "Salário Ana Paula",
-        data: new Date(Date.UTC(anoAtual, mesAtual - 1, 5)),
-        mesReferencia: compAtual,
-        accountId: contaAna.id,
-        categoryId: catMap.get("Salário")!,
-        userId: ana.id,
-      },
-      {
-        id: nextId(),
         valor: 512.9,
-        tipo: TransactionType.DESPESA,
         descricao: "Supermercado",
         data: new Date(Date.UTC(anoAtual, mesAtual - 1, 8)),
         mesReferencia: compAtual,
@@ -243,7 +176,6 @@ async function main() {
       {
         id: nextId(),
         valor: 189.9,
-        tipo: TransactionType.DESPESA,
         descricao: "Combustível",
         data: new Date(Date.UTC(anoAtual, mesAtual - 1, 9)),
         mesReferencia: compAtual,
@@ -254,7 +186,6 @@ async function main() {
       {
         id: nextId(),
         valor: 89.9,
-        tipo: TransactionType.DESPESA,
         descricao: "Streaming + internet",
         data: new Date(Date.UTC(anoAtual, mesAtual - 1, 3)),
         mesReferencia: compAtual,
@@ -270,7 +201,6 @@ async function main() {
     data: {
       id: nextId(),
       valor: 1500,
-      tipo: TransactionType.DESPESA,
       descricao: "Aluguel (recorrente)",
       data: new Date(Date.UTC(anoAtual, mesAtual - 1, 10)),
       mesReferencia: compAtual,
@@ -295,7 +225,6 @@ async function main() {
       data: {
         id: nextId(),
         valor: valorParcela,
-        tipo: TransactionType.DESPESA,
         descricao: "Notebook (parcelado)",
         data: new Date(Date.UTC(anoAtual, mesAtual - 1, 15)),
         mesReferencia: comp,
@@ -314,8 +243,6 @@ async function main() {
     data: {
       id: nextId(),
       valor: 250,
-      tipo: TransactionType.DESPESA,
-      descricao: "IPVA (parcela futura)",
       data: new Date(Date.UTC(anoMesSeguinte, mesSeguinte - 1, 20)),
       mesReferencia: compSeguinte,
       accountId: contaKaite.id,

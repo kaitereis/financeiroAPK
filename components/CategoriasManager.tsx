@@ -5,10 +5,7 @@ import { useRouter } from "next/navigation";
 import CategoriaForm, {
   type CategoriaFormValues,
 } from "@/components/CategoriaForm";
-import {
-  TIPO_CATEGORIA_LABEL,
-  type CategoriaComUso,
-} from "@/lib/categories";
+import { type CategoriaComUso } from "@/lib/categories";
 import { formatBRL } from "@/lib/competencia";
 
 interface Props {
@@ -25,9 +22,6 @@ export default function CategoriasManager({ categoriasIniciais }: Props) {
   const [modo, setModo] = useState<Modo>({ tipo: "lista" });
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
-
-  const despesas = categoriasIniciais.filter((c) => c.tipo === "DESPESA");
-  const receitas = categoriasIniciais.filter((c) => c.tipo === "RECEITA");
 
   async function enviar(
     url: string,
@@ -56,7 +50,7 @@ export default function CategoriasManager({ categoriasIniciais }: Props) {
 
     const aviso =
       categoria.qtdTransacoes > 0
-        ? `A categoria "${categoria.nome}" tem ${categoria.qtdTransacoes} lançamento(s), que serão movidos para "${categoria.tipo === "DESPESA" ? "Outros" : "Outras Receitas"}". Continuar?`
+        ? `A categoria "${categoria.nome}" tem ${categoria.qtdTransacoes} lançamento(s), que serão movidos para "Outros". Continuar?`
         : `Excluir a categoria "${categoria.nome}"?`;
 
     if (!window.confirm(aviso)) return;
@@ -154,7 +148,6 @@ export default function CategoriasManager({ categoriasIniciais }: Props) {
         <CategoriaForm
           inicial={{
             nome: categoria.nome,
-            tipo: categoria.tipo,
             cor: categoria.cor,
           }}
           onSalvar={(valores) =>
@@ -197,27 +190,14 @@ export default function CategoriasManager({ categoriasIniciais }: Props) {
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Despesas
+          Categorias
         </h3>
-        {despesas.length === 0 ? (
+        {categoriasIniciais.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-6 text-center text-sm text-slate-500">
-            Nenhuma categoria de despesa.
+            Nenhuma categoria cadastrada.
           </p>
         ) : (
-          renderLista(despesas)
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Receitas
-        </h3>
-        {receitas.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-6 text-center text-sm text-slate-500">
-            Nenhuma categoria de receita.
-          </p>
-        ) : (
-          renderLista(receitas)
+          renderLista(categoriasIniciais)
         )}
       </section>
     </div>

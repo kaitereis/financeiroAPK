@@ -47,7 +47,7 @@ export default function ExpenseList({
                   {d.parcela.num}/{d.parcela.total}
                 </span>
               )}
-              {d.recorrente && (
+              {d.recorrenteGrupoId && (
                 <span className="shrink-0 rounded-md bg-indigo-100 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
                   recorrente
                 </span>
@@ -83,7 +83,7 @@ export default function ExpenseList({
                     Excluir
                   </button>
                 )}
-                {onEncerrarRecorrencia && d.recorrente && (
+                {onEncerrarRecorrencia && d.recorrenteGrupoId && (
                   <button
                     type="button"
                     onClick={() => onEncerrarRecorrencia(d.id)}

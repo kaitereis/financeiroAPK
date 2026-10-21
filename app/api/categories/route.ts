@@ -45,9 +45,7 @@ export async function POST(request: Request) {
   if (!resultado.ok) {
     return NextResponse.json(
       {
-        erro: `Já existe uma categoria de ${
-          parsed.data.tipo === "DESPESA" ? "despesa" : "receita"
-        } chamada "${parsed.data.nome}".`,
+        erro: `Já existe uma categoria chamada "${parsed.data.nome}".`,
       },
       { status: 409 },
     );

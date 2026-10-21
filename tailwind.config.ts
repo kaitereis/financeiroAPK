@@ -13,7 +13,6 @@ const config: Config = {
           dark: "#1e40af",
         },
         expense: "#dc2626",
-        income: "#16a34a",
       },
     },
   },

@@ -1,17 +1,5 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { TransactionType } from "@prisma/client";
-
-/** Tipos de categoria aceitos (SPEC 4). */
-export const TIPOS_CATEGORIA = ["DESPESA", "RECEITA"] as const;
-
-export const TIPO_CATEGORIA_LABEL: Record<
-  (typeof TIPOS_CATEGORIA)[number],
-  string
-> = {
-  DESPESA: "Despesa",
-  RECEITA: "Receita",
-};
 
 /** Cor hexadecimal no formato #rrggbb. */
 const corSchema = z
@@ -21,11 +9,10 @@ const corSchema = z
 
 /**
  * Validação de entrada das rotas de categoria (AGENTS.md: validar antes do banco).
- * O nome é único por tipo (constraint @@unique no schema).
+ * O nome é único (constraint @@unique no schema).
  */
 export const categoriaSchema = z.object({
   nome: z.string().trim().min(1, "Informe o nome da categoria").max(60),
-  tipo: z.enum(TIPOS_CATEGORIA),
   cor: corSchema.default("#6b7280"),
 });
 
@@ -36,7 +23,6 @@ export type CategoriaInput = z.infer<typeof categoriaSchema>;
 export interface CategoriaComUso {
   id: string;
   nome: string;
-  tipo: "DESPESA" | "RECEITA";
   cor: string;
   qtdTransacoes: number;
   /** Total lançado nessa categoria (soma dos valores), para contexto na tela. */
@@ -46,16 +32,16 @@ export interface CategoriaComUso {
 /** Lista as categorias com a quantidade de lançamentos vinculados. */
 export async function listarCategorias(): Promise<CategoriaComUso[]> {
   const categorias = await prisma.category.findMany({
-    orderBy: [{ tipo: "asc" }, { nome: "asc" }],
+    orderBy: { nome: "asc" },
     include: {
-      transactions: { select: { valor: true } },
+      // Competências puladas de recorrências não contam como lançamentos.
+      transactions: { where: { ocorrenciaPulada: false }, select: { valor: true } },
     },
   });
 
   return categorias.map((c) => ({
     id: c.id,
     nome: c.nome,
-    tipo: c.tipo,
     cor: c.cor,
     qtdTransacoes: c.transactions.length,
     totalLancado: c.transactions.reduce((s, t) => s + Number(t.valor), 0),
@@ -86,7 +72,7 @@ export async function criarCategoria(
 ): Promise<ResultadoCategoria> {
   try {
     const criada = await prisma.category.create({
-      data: { nome: input.nome, tipo: input.tipo, cor: input.cor },
+      data: { nome: input.nome, cor: input.cor },
     });
     return { ok: true, id: criada.id };
   } catch (erro) {
@@ -111,7 +97,6 @@ export async function atualizarCategoria(
       where: { id },
       data: {
         ...(input.nome !== undefined && { nome: input.nome }),
-        ...(input.tipo !== undefined && { tipo: input.tipo }),
         ...(input.cor !== undefined && { cor: input.cor }),
       },
     });
@@ -122,10 +107,8 @@ export async function atualizarCategoria(
   }
 }
 
-/** Nome da categoria "de reserva" para o tipo informado. */
-function nomeCategoriaReserva(tipo: "DESPESA" | "RECEITA"): string {
-  return tipo === "DESPESA" ? "Outros" : "Outras Receitas";
-}
+/** Nome da categoria "de reserva" — destino dos lançamentos ao excluir uma categoria. */
+const CATEGORIA_RESERVA = "Outros";
 
 export type ResultadoExclusaoCategoria =
   | { ok: true; reatribuidas: number }
@@ -136,28 +119,24 @@ export type ResultadoExclusaoCategoria =
  * Exclui uma categoria.
  *
  * Decisão de produto (2026-09-16): se houver lançamentos vinculados, eles são
- * REATRIBUÍDOS para a categoria de reserva do mesmo tipo ("Outros" para despesa,
- * "Outras Receitas" para receita) antes de excluir — assim o histórico é preservado.
- * Se a categoria de reserva não existir (ex: a própria reserva está sendo excluída),
- * a operação é recusada para não deixar lançamentos órfãos.
+ * REATRIBUÍDOS para a categoria de reserva ("Outros") antes de excluir — assim o
+ * histórico é preservado. Se a categoria de reserva não existir (ex: a própria
+ * reserva está sendo excluída), a operação é recusada para não deixar lançamentos órfãos.
  */
 export async function excluirCategoria(
   id: string,
 ): Promise<ResultadoExclusaoCategoria> {
   const categoria = await prisma.category.findUnique({
     where: { id },
-    select: { id: true, nome: true, tipo: true },
+    select: { id: true, nome: true },
   });
   if (!categoria) return { ok: false, motivo: "nao_encontrada" };
-
-  const nomeReserva = nomeCategoriaReserva(categoria.tipo);
 
   // A própria categoria de reserva não pode ser excluída se tiver lançamentos,
   // pois não haveria destino válido para reatribuição.
   const reserva = await prisma.category.findFirst({
     where: {
-      tipo: categoria.tipo,
-      nome: nomeReserva,
+      nome: CATEGORIA_RESERVA,
       id: { not: id },
     },
     select: { id: true },

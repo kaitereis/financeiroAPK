@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { addMonths, toCompetencia } from "@/lib/competencia";
-import { TransactionType } from "@prisma/client";
 
 /**
  * Data layer e schemas para CRUD de transações (fatia 5).
@@ -37,7 +36,6 @@ export const transacaoBaseSchema = z.object({
 
 /** Schema para criação — inclui opções de parcelamento e recorrência. */
 export const transacaoCreateSchema = transacaoBaseSchema.extend({
-  tipo: z.literal("DESPESA").default("DESPESA"),
   parcelada: z.boolean().default(false),
   parcelas: z.coerce
     .number({ invalid_type_error: "Número de parcelas inválido" })
@@ -49,9 +47,7 @@ export const transacaoCreateSchema = transacaoBaseSchema.extend({
 });
 
 /** Schema para edição de uma transação individual. */
-export const transacaoUpdateSchema = transacaoBaseSchema.partial().extend({
-  tipo: z.literal("DESPESA").optional(),
-});
+export const transacaoUpdateSchema = transacaoBaseSchema.partial();
 
 export type TransacaoCreateInput = z.infer<typeof transacaoCreateSchema>;
 export type TransacaoUpdateInput = z.infer<typeof transacaoUpdateSchema>;
@@ -84,9 +80,9 @@ export interface TransacaoParaFormulario {
   valor: number;
   data: Date;
   mesReferencia: Date;
-  tipo: TransactionType;
   recorrente: boolean;
   recorrenteGrupoId: string | null;
+  ocorrenciaPulada: boolean;
   parcelaGrupoId: string | null;
   parcelaNum: number | null;
   parcelaTotal: number | null;
@@ -106,9 +102,9 @@ export async function buscarTransacao(
     valor: Number(t.valor),
     data: t.data,
     mesReferencia: t.mesReferencia,
-    tipo: t.tipo,
     recorrente: t.recorrente,
     recorrenteGrupoId: t.recorrenteGrupoId,
+    ocorrenciaPulada: t.ocorrenciaPulada,
     parcelaGrupoId: t.parcelaGrupoId,
     parcelaNum: t.parcelaNum,
     parcelaTotal: t.parcelaTotal,
@@ -142,9 +138,9 @@ export async function criarTransacao(
 
   const categoria = await prisma.category.findUnique({
     where: { id: input.categoryId },
-    select: { id: true, tipo: true },
+    select: { id: true },
   });
-  if (!categoria || categoria.tipo !== TransactionType.DESPESA) {
+  if (!categoria) {
     return { ok: false, motivo: "categoria_invalida" };
   }
 
@@ -158,7 +154,6 @@ export async function criarTransacao(
       data: {
         descricao: input.descricao,
         valor: input.valor,
-        tipo: TransactionType.DESPESA,
         data: input.data,
         mesReferencia: competenciaBase,
         recorrente: true,
@@ -191,7 +186,6 @@ export async function criarTransacao(
         data: {
           descricao: `${input.descricao} (${i + 1}/${qtd})`,
           valor: valores[i],
-          tipo: TransactionType.DESPESA,
           data: input.data,
           mesReferencia: competencia,
           recorrente: false,
@@ -213,7 +207,6 @@ export async function criarTransacao(
     data: {
       descricao: input.descricao,
       valor: input.valor,
-      tipo: TransactionType.DESPESA,
       data: input.data,
       mesReferencia: competenciaBase,
       recorrente: false,
@@ -256,9 +249,9 @@ export async function atualizarTransacao(
   if (input.categoryId) {
     const categoria = await prisma.category.findUnique({
       where: { id: input.categoryId },
-      select: { id: true, tipo: true },
+      select: { id: true },
     });
-    if (!categoria || categoria.tipo !== TransactionType.DESPESA) {
+    if (!categoria) {
       return { ok: false, motivo: "categoria_invalida" };
     }
   }
@@ -308,9 +301,9 @@ export async function atualizarGrupoParcelas(
   if (input.categoryId) {
     const categoria = await prisma.category.findUnique({
       where: { id: input.categoryId },
-      select: { id: true, tipo: true },
+      select: { id: true },
     });
-    if (!categoria || categoria.tipo !== TransactionType.DESPESA) {
+    if (!categoria) {
       return { ok: false, motivo: "categoria_invalida" };
     }
   }
@@ -373,38 +366,67 @@ export type ResultadoEncerrarRecorrencia =
   | { ok: false; motivo: "nao_encontrada" };
 
 /**
- * Encerra uma recorrência:
- * - Remove a base (recorrente=true).
- * - Remove todas as ocorrências futuras (competência >= mês atual).
- * - Mantém ocorrências de meses anteriores (histórico).
+ * Encerra uma recorrência a partir de uma competência (inclusiva):
+ * - Remove todas as ocorrências com `mesReferencia >= mesAFrente`.
+ * - Mantém as ocorrências anteriores (histórico) e as DESVINCULA do grupo
+ *   (`recorrente = false`, `recorrenteGrupoId = null`) para que a série não
+ *   volte a ser materializada nos meses seguintes.
  */
 export async function encerrarRecorrencia(
   recorrenteGrupoId: string,
+  mesAFrente: Date,
 ): Promise<ResultadoEncerrarRecorrencia> {
-  const base = await prisma.transaction.findFirst({
-    where: { recorrenteGrupoId, recorrente: true },
-    select: { id: true },
+  const existe = await prisma.transaction.count({
+    where: { recorrenteGrupoId },
   });
-  if (!base) return { ok: false, motivo: "nao_encontrada" };
+  if (existe === 0) return { ok: false, motivo: "nao_encontrada" };
 
-  const hoje = toCompetencia(new Date());
+  const corte = toCompetencia(mesAFrente);
 
   const removidas = await prisma.$transaction(async (tx) => {
     const futuras = await tx.transaction.deleteMany({
       where: {
         recorrenteGrupoId,
-        recorrente: false,
-        mesReferencia: { gte: hoje },
+        mesReferencia: { gte: corte },
       },
     });
-    await tx.transaction.delete({ where: { id: base.id } });
+    // Desvincula o histórico mantido — sem membros no grupo, a materialização
+    // não recomeça a série ao reabrir os meses.
+    await tx.transaction.updateMany({
+      where: { recorrenteGrupoId },
+      data: { recorrente: false, recorrenteGrupoId: null },
+    });
     return futuras.count;
   });
 
   return { ok: true, removidas };
 }
 
-/** Lista contas e categorias de despesa para popular o formulário. */
+/**
+ * "Pula" a ocorrência de uma recorrência apenas no mês dela.
+ * A linha NÃO é apagada: é marcada como `ocorrenciaPulada`, ficando oculta das
+ * listas e totais, mas mantendo-se como âncora da série — assim os meses
+ * seguintes continuam sendo gerados e o mês pulado não "revive" ao ser reaberto.
+ */
+export async function pularOcorrenciaRecorrente(
+  id: string,
+): Promise<ResultadoExclusao> {
+  const t = await prisma.transaction.findUnique({
+    where: { id },
+    select: { id: true, recorrenteGrupoId: true },
+  });
+  if (!t || !t.recorrenteGrupoId) {
+    return { ok: false, motivo: "nao_encontrada" };
+  }
+
+  await prisma.transaction.update({
+    where: { id },
+    data: { ocorrenciaPulada: true },
+  });
+  return { ok: true };
+}
+
+/** Lista contas e categorias para popular o formulário. */
 export async function listarOpcoesParaFormulario() {
   const [contas, categorias] = await Promise.all([
     prisma.account.findMany({
@@ -412,7 +434,6 @@ export async function listarOpcoesParaFormulario() {
       select: { id: true, nome: true },
     }),
     prisma.category.findMany({
-      where: { tipo: TransactionType.DESPESA },
       orderBy: { nome: "asc" },
       select: { id: true, nome: true, cor: true },
     }),

@@ -5,8 +5,8 @@ interface Props {
 }
 
 const ABAS = [
-  { chave: "dashboard", href: "/dashboard", rotulo: "Visão geral" },
   { chave: "mes", href: "/", rotulo: "Despesas do mês" },
+  { chave: "dashboard", href: "/dashboard", rotulo: "Visão geral" },
   { chave: "contas", href: "/contas", rotulo: "Contas" },
   { chave: "categorias", href: "/categorias", rotulo: "Categorias" },
 ] as const;

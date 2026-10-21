@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { addMonths, toCompetencia } from "@/lib/competencia";
-import { TransactionType } from "@prisma/client";
 
 export interface DespesaDoMes {
   id: string;
@@ -8,16 +7,27 @@ export interface DespesaDoMes {
   valor: number;
   data: Date;
   categoria: { id: string; nome: string; cor: string };
+  userId: string;
   quemLancou: string;
   parcela: { num: number; total: number } | null;
   recorrente: boolean;
+  recorrenteGrupoId: string | null;
+}
+
+/** Despesas de um usuário numa competência, com o total (para as colunas por pessoa). */
+export interface DespesasDoUsuario {
+  userId: string;
+  nome: string;
+  total: number;
+  despesas: DespesaDoMes[];
 }
 
 /** Monta o filtro `where` de despesas de uma competência, opcionalmente por categorias. */
 function filtroDespesas(competencia: Date, categoriaIds?: string[]) {
   return {
-    tipo: TransactionType.DESPESA,
     mesReferencia: competencia,
+    // Competências "puladas" de recorrências ficam ocultas das listas e totais.
+    ocorrenciaPulada: false,
     ...(categoriaIds && categoriaIds.length > 0
       ? { categoryId: { in: categoriaIds } }
       : {}),
@@ -27,53 +37,75 @@ function filtroDespesas(competencia: Date, categoriaIds?: string[]) {
 /**
  * Garante que as recorrências ativas tenham uma ocorrência materializada no mês informado.
  * Regra da SPEC 4.2 — geração sob demanda ("lazy"), disparada ao abrir um mês.
- * A recorrência-base é a transação com recorrente = true; as ocorrências herdam
- * seu recorrenteGrupoId. Não cria se já existir uma ocorrência daquele grupo no mês.
+ *
+ * A recorrência é identificada pelo `recorrenteGrupoId`. A "âncora" da série é a
+ * transação com `recorrente = true` (a base); se ela tiver sido apagada, qualquer
+ * ocorrência restante do grupo assume o papel de âncora (auto-reparo) — assim a
+ * série volta a ser materializada em vez de morrer silenciosamente.
+ *
+ * Não materializa competências anteriores à âncora nem recria meses já pulados
+ * (`ocorrenciaPulada`), evitando que uma ocorrência excluída "reviva" ao reabrir o mês.
  */
 export async function materializarRecorrentes(competencia: Date): Promise<void> {
-  const bases = await prisma.transaction.findMany({
-    where: { recorrente: true },
+  const doGrupo = await prisma.transaction.findMany({
+    where: { recorrenteGrupoId: { not: null } },
+    orderBy: [{ recorrente: "desc" }, { mesReferencia: "asc" }],
   });
 
-  for (const base of bases) {
-    const grupoId = base.recorrenteGrupoId ?? base.id;
+  // Dados legados: bases marcadas como recorrentes ainda sem grupo preenchido.
+  const basesSemGrupo = await prisma.transaction.findMany({
+    where: { recorrente: true, recorrenteGrupoId: null },
+  });
 
-    // Garante que a própria base tenha o grupo preenchido.
-    if (!base.recorrenteGrupoId) {
-      await prisma.transaction.update({
-        where: { id: base.id },
-        data: { recorrenteGrupoId: grupoId },
-      });
+  const grupos = new Map<string, typeof doGrupo>();
+  for (const t of doGrupo) {
+    const gid = t.recorrenteGrupoId as string;
+    const lista = grupos.get(gid) ?? [];
+    lista.push(t);
+    grupos.set(gid, lista);
+  }
+  for (const base of basesSemGrupo) {
+    const gid = base.id;
+    await prisma.transaction.update({
+      where: { id: base.id },
+      data: { recorrenteGrupoId: gid },
+    });
+    base.recorrenteGrupoId = gid;
+    grupos.set(gid, [base]);
+  }
+
+  for (const [grupoId, membros] of grupos) {
+    // Âncora = base (recorrente = true); na ausência dela, a ocorrência mais antiga.
+    const ancora = membros.find((m) => m.recorrente) ?? membros[0];
+    if (!ancora) continue;
+
+    if (competencia.getTime() < toCompetencia(ancora.mesReferencia).getTime()) {
+      continue;
     }
 
-    // Não gera para competências anteriores à base nem re-gera o que já existe.
-    if (competencia < toCompetencia(base.mesReferencia)) continue;
-
-    const jaExiste = await prisma.transaction.findFirst({
-      where: { recorrenteGrupoId: grupoId, mesReferencia: competencia },
-      select: { id: true },
-    });
+    const jaExiste = membros.some(
+      (m) => m.mesReferencia.getTime() === competencia.getTime(),
+    );
     if (jaExiste) continue;
 
     await prisma.transaction.create({
       data: {
-        valor: base.valor,
-        tipo: base.tipo,
-        descricao: base.descricao,
+        descricao: ancora.descricao,
+        valor: ancora.valor,
         // Mantém o mesmo dia do mês da base, dentro da nova competência.
         data: new Date(
           Date.UTC(
             competencia.getUTCFullYear(),
             competencia.getUTCMonth(),
-            base.data.getUTCDate(),
+            ancora.data.getUTCDate(),
           ),
         ),
         mesReferencia: competencia,
         recorrente: false,
         recorrenteGrupoId: grupoId,
-        accountId: base.accountId,
-        categoryId: base.categoryId,
-        userId: base.userId,
+        accountId: ancora.accountId,
+        categoryId: ancora.categoryId,
+        userId: ancora.userId,
       },
     });
   }
@@ -111,20 +143,50 @@ export async function listarDespesasDoMes(
     valor: Number(t.valor),
     data: t.data,
     categoria: { id: t.category.id, nome: t.category.nome, cor: t.category.cor },
+    userId: t.userId,
     quemLancou: t.user.nome,
     parcela:
       t.parcelaNum != null && t.parcelaTotal != null
         ? { num: t.parcelaNum, total: t.parcelaTotal }
         : null,
     recorrente: t.recorrente,
+    recorrenteGrupoId: t.recorrenteGrupoId,
   }));
+}
+
+/**
+ * Agrupa as despesas do mês por usuário que lançou (colunas "Káite" / "Ana Paula").
+ * A ordem segue a ordem dos usuários cadastrados (createdAt), garantindo colunas estáveis.
+ * Respeita o filtro de categorias, pois parte da mesma lista já filtrada.
+ */
+export async function despesasPorUsuario(
+  competencia: Date,
+  categoriaIds?: string[],
+): Promise<DespesasDoUsuario[]> {
+  const [usuarios, despesas] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, nome: true },
+    }),
+    listarDespesasDoMes(competencia, categoriaIds),
+  ]);
+
+  return usuarios.map((u) => {
+    const doUsuario = despesas.filter((d) => d.userId === u.id);
+    return {
+      userId: u.id,
+      nome: u.nome,
+      total: doUsuario.reduce((s, d) => s + d.valor, 0),
+      despesas: doUsuario,
+    };
+  });
 }
 
 /** Total gasto por categoria numa competência (para o resumo lateral). */
 export async function totalPorCategoria(competencia: Date) {
   const rows = await prisma.transaction.groupBy({
     by: ["categoryId"],
-    where: { tipo: TransactionType.DESPESA, mesReferencia: competencia },
+    where: { mesReferencia: competencia, ocorrenciaPulada: false },
     _sum: { valor: true },
   });
 
@@ -147,20 +209,18 @@ export async function totalPorCategoria(competencia: Date) {
     .sort((a, b) => b.total - a.total);
 }
 
-/** Saldo total de todas as contas (saldo_inicial + transações pela data real). */
+/** Saldo total de todas as contas (saldo_inicial − despesas pela data real). */
 export async function saldoTotalContas(): Promise<number> {
   const contas = await prisma.account.findMany({
     include: {
-      transactions: { select: { valor: true, tipo: true } },
+      transactions: { where: { ocorrenciaPulada: false }, select: { valor: true } },
     },
   });
 
   return contas.reduce((acc, conta) => {
     const inicial = Number(conta.saldoInicial);
-    const mov = conta.transactions.reduce((s, t) => {
-      const v = Number(t.valor);
-      return t.tipo === TransactionType.RECEITA ? s + v : s - v;
-    }, 0);
+    // Sistema apenas de despesas: toda transação reduz o saldo.
+    const mov = conta.transactions.reduce((s, t) => s - Number(t.valor), 0);
     return acc + inicial + mov;
   }, 0);
 }

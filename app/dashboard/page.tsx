@@ -14,7 +14,6 @@ import { formatBRL, formatDate, labelCompetencia } from "@/lib/competencia";
 export const dynamic = "force-dynamic";
 
 function LancamentoItem({ l }: { l: UltimoLancamento }) {
-  const ehReceita = l.tipo === "RECEITA";
   return (
     <li className="flex items-center gap-4 px-4 py-3 transition hover:bg-slate-50">
       <span
@@ -30,12 +29,8 @@ function LancamentoItem({ l }: { l: UltimoLancamento }) {
           {l.categoria.nome} · {formatDate(l.data)} · por {l.quemLancou}
         </p>
       </div>
-      <span
-        className={`shrink-0 font-semibold tabular-nums ${
-          ehReceita ? "text-income" : "text-expense"
-        }`}
-      >
-        {ehReceita ? "+" : "−"} {formatBRL(l.valor)}
+      <span className="shrink-0 font-semibold tabular-nums text-expense">
+        − {formatBRL(l.valor)}
       </span>
     </li>
   );
@@ -66,7 +61,7 @@ export default async function DashboardPage() {
         <NavTabs ativa="dashboard" />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl bg-gradient-to-br from-brand to-brand-dark p-6 text-white shadow-sm">
           <p className="text-sm font-medium text-blue-100">Saldo total das contas</p>
           <p className="mt-1 text-3xl font-bold tabular-nums">
@@ -74,15 +69,6 @@ export default async function DashboardPage() {
           </p>
           <p className="mt-2 text-xs text-blue-100">
             Soma de todas as contas e carteiras
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
-          <p className="text-sm font-medium text-slate-500">
-            Receitas de {labelCompetencia(resumo.competencia)}
-          </p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-income">
-            {formatBRL(resumo.receitas)}
           </p>
         </div>
 
@@ -100,14 +86,10 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-slate-500">
-              Resultado do mês (receitas − despesas)
+              Total de despesas do mês
             </p>
-            <p
-              className={`mt-1 text-2xl font-bold tabular-nums ${
-                resumo.saldo >= 0 ? "text-income" : "text-expense"
-              }`}
-            >
-              {formatBRL(resumo.saldo)}
+            <p className="mt-1 text-2xl font-bold tabular-nums text-expense">
+              {formatBRL(resumo.despesas)}
             </p>
           </div>
           <Link

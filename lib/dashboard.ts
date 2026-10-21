@@ -1,57 +1,44 @@
 import { prisma } from "@/lib/prisma";
-import { TransactionType } from "@prisma/client";
 import { toCompetencia } from "@/lib/competencia";
 
 /**
  * Data layer do Dashboard (fatia 6).
- * Reúne: saldo atual total, resumo do mês (receitas x despesas) e últimos lançamentos.
+ * Reúne: saldo atual total, resumo do mês (despesas) e últimos lançamentos.
  */
 
 export interface ResumoMes {
   competencia: Date;
-  receitas: number;
   despesas: number;
-  saldo: number;
 }
 
 export interface UltimoLancamento {
   id: string;
   descricao: string | null;
   valor: number;
-  tipo: TransactionType;
   data: Date;
   categoria: { nome: string; cor: string };
   quemLancou: string;
 }
 
-/** Resumo de receitas x despesas de uma competência. */
+/** Resumo de despesas de uma competência. */
 export async function resumoDoMes(competencia: Date): Promise<ResumoMes> {
-  const rows = await prisma.transaction.groupBy({
-    by: ["tipo"],
-    where: { mesReferencia: competencia },
+  const resultado = await prisma.transaction.aggregate({
+    where: { mesReferencia: competencia, ocorrenciaPulada: false },
     _sum: { valor: true },
   });
 
-  const receitas = Number(
-    rows.find((r) => r.tipo === TransactionType.RECEITA)?._sum.valor ?? 0,
-  );
-  const despesas = Number(
-    rows.find((r) => r.tipo === TransactionType.DESPESA)?._sum.valor ?? 0,
-  );
-
   return {
     competencia,
-    receitas,
-    despesas,
-    saldo: receitas - despesas,
+    despesas: Number(resultado._sum.valor ?? 0),
   };
 }
 
-/** Últimos lançamentos (receitas e despesas), mais recentes primeiro. */
+/** Últimos lançamentos (despesas), mais recentes primeiro. */
 export async function ultimosLancamentos(
   limite = 8,
 ): Promise<UltimoLancamento[]> {
   const rows = await prisma.transaction.findMany({
+    where: { ocorrenciaPulada: false },
     orderBy: [{ data: "desc" }, { createdAt: "desc" }],
     take: limite,
     include: {
@@ -64,7 +51,6 @@ export async function ultimosLancamentos(
     id: t.id,
     descricao: t.descricao,
     valor: Number(t.valor),
-    tipo: t.tipo,
     data: t.data,
     categoria: { nome: t.category.nome, cor: t.category.cor },
     quemLancou: t.user.nome,

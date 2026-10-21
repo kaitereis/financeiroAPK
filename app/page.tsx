@@ -4,6 +4,7 @@ import CategoryFilter from "@/components/CategoryFilter";
 import UserMenu from "@/components/UserMenu";
 import NavTabs from "@/components/NavTabs";
 import TransactionsManager from "@/components/TransactionsManager";
+import DespesasPorPessoa from "@/components/DespesasPorPessoa";
 import { authOptions } from "@/lib/auth";
 import {
   materializarRecorrentes,
@@ -11,6 +12,7 @@ import {
   listarDespesasDoMes,
   totalPorCategoria,
   saldoTotalContas,
+  despesasPorUsuario,
 } from "@/lib/transactions";
 import { listarOpcoesParaFormulario } from "@/lib/transactions-crud";
 import {
@@ -45,7 +47,7 @@ export default async function MesPage({ searchParams }: PageProps) {
   // SPEC 4.2 — materializa recorrências ao abrir o mês.
   await materializarRecorrentes(competencia);
 
-  const [totalMes, totalMesSemFiltro, despesas, porCategoria, saldo, opcoes] =
+  const [totalMes, totalMesSemFiltro, despesas, porCategoria, saldo, opcoes, porUsuario] =
     await Promise.all([
       totalDespesas(competencia, categoriasSelecionadas),
       totalDespesas(competencia),
@@ -53,6 +55,7 @@ export default async function MesPage({ searchParams }: PageProps) {
       totalPorCategoria(competencia),
       saldoTotalContas(),
       listarOpcoesParaFormulario(),
+      despesasPorUsuario(competencia, categoriasSelecionadas),
     ]);
 
   const ehMesAtual =
@@ -88,6 +91,10 @@ export default async function MesPage({ searchParams }: PageProps) {
           ehMesAtual={ehMesAtual}
           cat={cat}
         />
+      </div>
+
+      <div className="mb-8">
+        <DespesasPorPessoa porUsuario={porUsuario} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_280px]">

@@ -4,6 +4,7 @@ import {
   atualizarTransacao,
   buscarTransacao,
   excluirTransacao,
+  pularOcorrenciaRecorrente,
   transacaoUpdateSchema,
 } from "@/lib/transactions-crud";
 
@@ -70,14 +71,31 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   return NextResponse.json({ ok: true });
 }
 
-/** DELETE /api/transactions/[id] — exclui uma transação individual. */
-export async function DELETE(_request: Request, { params }: RouteContext) {
+/**
+ * DELETE /api/transactions/[id] — exclui uma transação.
+ * Query opcional `?escopo=pular` (apenas para recorrências): em vez de apagar,
+ * marca a ocorrência daquele mês como pulada, mantendo a série ativa.
+ */
+export async function DELETE(request: Request, { params }: RouteContext) {
   const session = await exigirSessao();
   if (!session) {
     return NextResponse.json({ erro: "Não autenticado" }, { status: 401 });
   }
 
   const { id } = await params;
+  const { searchParams } = new URL(request.url);
+
+  if (searchParams.get("escopo") === "pular") {
+    const resultado = await pularOcorrenciaRecorrente(id);
+    if (!resultado.ok) {
+      return NextResponse.json(
+        { erro: "Ocorrência recorrente não encontrada." },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const resultado = await excluirTransacao(id);
 
   if (!resultado.ok) {
